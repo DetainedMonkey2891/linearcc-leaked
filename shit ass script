@@ -1,0 +1,157 @@
+getgenv().Linear = {
+    ['Main'] = {
+        ['Whitelist'] = {
+            ['Script Key'] = "YOUR KEY HERE"
+        },
+        ['Camlock'] = {
+            ['Enabled'] = true,
+            ['Key'] = 'C',
+            ['Prediction'] = 0.1672,
+            ['Prediction Method'] = "Multiplication",
+            ['Part'] = "HumanoidRootPart",
+            ['Offset'] = {
+                ['Jump'] = -1.5
+            },
+            ['Smoothing'] = 1,
+            ['Checks'] = {
+                ['KO'] = true,
+                ['Grabbed'] = true
+            },
+            ['Triggerbot'] = {
+                ['Enabled'] = false,
+                ['Key'] = 'E',
+                ['FOV'] = 60,
+                ['Delay'] = 0.01
+            }
+        }
+    },
+    ['Rage'] = {
+        ['Cframe'] = {
+            ['Amount'] = 2,
+            ['Enabled'] = true
+        }
+    }
+}
+
+Linear = getgenv().Linear
+
+-- // Variables
+local ws = game:GetService("Workspace")
+local uis = game:GetService("UserInputService")
+local players = game:GetService("Players")
+local client = players.LocalPlayer
+local camera = ws.CurrentCamera
+local target = nil
+local stats = game:GetService("Stats")
+local mouse = uis:GetMouseLocation()
+local vec2 = Vector2.new
+local vec3 = Vector3.new
+local cf = CFrame.new
+local trigger_fov = Drawing.new("Circle")
+trigger_fov.Visible = false
+trigger_fov.Radius = Linear.Main.Camlock.Triggerbot['FOV']
+local hitpart = nil
+local prediction = nil
+local targethook = nil
+
+get_target = function()
+    local target, distance = nil, 1/0
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= client and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local pos = player.Character.HumanoidRootPart.Position
+            local dist = (vec2(camera:WorldToScreenPoint(pos).X, camera:WorldToScreenPoint(pos).Y) - mouse).Magnitude
+            if dist < distance then
+                distance, target = dist, player
+            end
+        end
+    end
+    return target
+end
+
+scanned = function(target)
+    if not target or not target.Character then
+        return false
+    end
+    local char = target.Character
+    if Linear.Main.Camlock["Checks"].KO then
+        local BodyEffects = char:FindFirstChild("BodyEffects")
+        if BodyEffects and BodyEffects:FindFirstChild("K.O") and BodyEffects["K.O"].Value then
+            return false
+        end
+    end
+    if Linear.Main.Camlock["Checks"].Grabbed and char:FindFirstChild("GRABBING_CONSTRAINT") then
+        return false
+    end
+    return true
+end
+
+Camlock = function()
+    if Linear.Main.Camlock.Enabled then
+        if target == nil then
+            target = get_target()
+        end
+        if target and scanned(target) then
+            hitpart = target.Character and target.Character:FindFirstChild(Linear.Main.Camlock["Part"])
+            if hitpart then
+                local predictedpos = hitpart.Position
+                local method = Linear.Main.Camlock['Prediction Method']
+                if method == 'Multiplication' then
+                    predictedpos = predictedpos + ((target.Character.HumanoidRootPart.Velocity or hitpart.Velocity) * Linear.Main.Camlock["Prediction"])
+                elseif method == 'Division' then
+                    predictedpos = predictedpos + ((target.Character.HumanoidRootPart.Velocity or hitpart.Velocity) / Linear.Main.Camlock["Prediction"])
+                end
+                if target.Character.Humanoid.Jump then
+                    targethook = cf(camera.CFrame.p, predictedpos + vec3(0, Linear.Main["Camlock"].Offset.Jump, 0))
+                else
+                    targethook = cf(camera.CFrame.p, predictedpos)
+                end
+                
+                camera.CFrame = camera.CFrame:Lerp(targethook, Linear.Main["Camlock"]['Smoothing'] or 0.1)
+            end
+        end
+    end
+end
+
+Triggerbot = function()
+    if Linear.Main["Camlock"].Triggerbot.Enabled then
+        local target = get_target()
+        if target and scanned(target) then
+            local part = target.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local spos = camera:WorldToScreenPoint(part.Position)
+                local distance = (vec2(spos.X, spos.Y) - mouse).Magnitude
+
+                if distance <= trigger_fov.Radius then
+                    wait(Linear.Main["Camlock"].Triggerbot.Delay)
+                    mouse1press()
+                    wait(Linear.Main["Camlock"].Triggerbot.Delay)
+                    mouse1release()
+                end
+            end
+        end
+    end
+end
+
+handle = function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode[Linear.Main["Camlock"].Key] then
+        Linear.Main["Camlock"].Enabled = not Linear.Main["Camlock"].Enabled
+        target = get_target()
+    end
+    if input.KeyCode == Enum.KeyCode[Linear.Main["Camlock"].Triggerbot.Key] then
+        Linear.Main["Camlock"].Triggerbot.Enabled = not Linear.Main["Camlock"].Triggerbot.Enabled
+    end
+end
+
+uis.InputBegan:Connect(handle)
+game:GetService("RunService").RenderStepped:Connect(function()
+    Triggerbot()
+    Camlock()
+    trigger_fov.Position = mouse
+    if Linear.Rage['Cframe'].Enabled then
+        local hrp = client.Character and client.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = hrp.CFrame + client.Character.Humanoid.MoveDirection * (Linear.Rage['Cframe'].Amount or 1.5)
+        end
+    end
+end)
